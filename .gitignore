@@ -1,7 +1,8 @@
 Task_1/
 .vs/
 Client/
-Networks.sln
 Networks/
 Server/
 x64/
+DnsTest/
+ServerDns/
