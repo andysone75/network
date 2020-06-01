@@ -3,11 +3,6 @@
 #include <string>
 #include <fstream>
 
-#include <iostream>
-#include <winsock2.h>
-
-#include "DnsHelper.h"
-
 using namespace std;
 
 int main()
@@ -33,8 +28,6 @@ int main()
 		return -1;
 	}
 
-	
-
 	cout << "Listening datagrams...\n";
 	while (true)
 	{
@@ -46,7 +39,8 @@ int main()
 			return -1;
 		}
 
-		cout << "Client: " << server.getRecieveBuffer() << endl;
+		const char* request = server.getRecieveBuffer();
+		cout << "Client: " << request << endl;
 		if (strcmp(server.getRecieveBuffer(), "kill") == 0) {
 			server.sendResponse("server killed. reboot server before input new command");
 			if (server.getLastError() == FAIL_CODE_BUFFER_OVERFLOW)
@@ -69,7 +63,22 @@ int main()
 		string configValue = string(istreambuf_iterator<char>(ifs), istreambuf_iterator<char>());
 		ifs.close();
 
-		string str = "Hello, World!!!";
+		int offset = 0;
+		try
+		{
+			offset = stoi(configValue);
+		}
+		catch (exception& e)
+		{
+			if (!configValue.empty())
+				cout << "Config file error: " << e.what() << endl;
+		}
+
+		tm* time = server.getTime(offset);
+		string strHour	= to_string(time->tm_hour);
+		string strMin	= to_string(time->tm_min);
+		string str = (strHour.length() == 2 ? strHour : '0' + strHour) + ':' + (strMin.length() == 2 ? strMin : '0' + strMin);
+		delete time;
 
 		server.sendResponse(str.c_str());
 		if (server.getLastError() == FAIL_CODE_BUFFER_OVERFLOW)
@@ -96,8 +105,4 @@ int main()
 
 	system("pause");
 	return 0;
-}
-
-void GetIpByUrl() {
-	
 }
