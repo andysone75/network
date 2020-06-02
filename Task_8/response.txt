@@ -1,0 +1,1 @@
+{"response":[{"id":56719936,"first_name":"Svyatoslav","last_name":"Solodushkin","is_closed":false,"can_access_closed":true,"bdate":"30.5.1983"}]}
