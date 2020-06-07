@@ -148,12 +148,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="VkApp.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="token.txt" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="User.h" />
+    <ClInclude Include="VkApp.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

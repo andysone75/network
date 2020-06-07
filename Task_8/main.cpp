@@ -1,103 +1,78 @@
 ﻿#include <iostream>
-#include "rapidjson/include/rapidjson/rapidjson.h"
-#include "rapidjson/include/rapidjson/document.h"
-#include <fstream>
-#include <map>
-#include "User.h"
 #include <algorithm>
+#include <map>
+#include "VkApp.h"
 
 using namespace std;
-using namespace rapidjson;
 
 int main()
 {
-    enum class State { UserSelecting, UserMenu, Exit };
-    enum class Comands { Folowers };
-
-    map<string, Comands> comands;
-    comands["folowers"] = Comands::Folowers;
-
-    map<int, string> helps;
-    helps[static_cast<int>(State::UserSelecting)] = "\nexit : Exit the program\nhelp : Show help\n[id] : Enter user id\n";
-    helps[static_cast<int>(State::UserMenu)] = "\nexit : Exit the program\nhelp : Show help\nback : Back to the User Selecting\n";
-
-    string id = "";
-    State state = State::UserSelecting;
-    string token;
-    string request;
-    string response;
-    ifstream ifresponse;
-    Document d;
-    Value val;
-    string userName;
+    VkApp app;
     string comand;
-    User user;
-
-    ifstream* iftoken = new ifstream("token.txt");
-    token =  string(istreambuf_iterator<char>(*iftoken), istreambuf_iterator<char>());
-    iftoken->close();
-    delete iftoken;
-
 
     cout << "\tVK API\n";
+    app.ShowHelp(State::UserSelecting);
+    cout << "\nUser Selecting\n";
 
-    cout << helps[static_cast<int>(State::UserSelecting)];
-
-    while (state != State::Exit) {
-        switch (state)
-        {
-        case State::UserSelecting:
-            cout << "\nUser Selecting\n";
-            break;
-        case State::UserMenu:
-            cout << "\nUser Menu: " << user.getName() << endl;
-            break;
-        }
-
-        cout << '>';
+    while (app.GetState() != State::Exit) {
+        cout << "\n>";
         cin >> comand;
         transform(comand.begin(), comand.end(), comand.begin(), ::tolower);
 
         if (comand == "exit") {
-            state = State::Exit;
+            app.GoTo(State::Exit);
             continue;
         }
         else if (comand == "help") {
-            cout << helps[static_cast<int>(state)];
+            app.ShowHelp();
             continue;
         }
 
-        if (state == State::UserSelecting) {
-            string request = "curl \"https://api.vk.com/method/users.get?user_ids=" + comand + "&fields=bdate&access_token=" + token + "&v=5.107\" > response.txt 2> null";
-            system(request.c_str());
-
-            ifstream ifresponse = ifstream("response.txt");
-            string response = string(istreambuf_iterator<char>(ifresponse), istreambuf_iterator<char>());
-            ifresponse.close();
-
-            Document d;
-            d.Parse(response.c_str());
-            if (d.HasMember("error")) {
-                cout << "\nID doesn't exist" << endl;
-                continue;
+        if (app.GetState() == State::UserSelecting) {
+            User* user = app.GetUserById(comand);
+            if (user != nullptr) {
+                app.SetCurrentUser(user);
+                app.GoTo(State::UserMenu);
             }
-            else {
-                Value val = d["response"].GetArray()[0].GetObject();
-                string userName = val["first_name"].GetString();
-                userName += ' ';
-                userName += val["last_name"].GetString();
-                int id = val["id"].GetInt();
-
-                user = User(userName, to_string(id));
-                state = State::UserMenu;
-            }
-        } else if (state == State::UserMenu) {
+        }
+        else if (app.GetState() == State::UserMenu) {
             if (comand == "back") {
-                state = State::UserSelecting;
+                app.Back();
                 continue;
             }
+            else if (comand == "friends") {
+                app.ShowFriends(app.GetCurrentUser());
+                if (!app.GetCurrentUser()->Friends.empty())
+                    app.GoTo(State::FriendsList);
+            }
             else {
-                cout << helps[static_cast<char>(State::UserMenu)];
+                app.ShowHelp(State::UserMenu);
+            }
+        }
+        else if (app.GetState() == State::FriendsList) {
+            if (comand == "back") {
+                app.GoTo(State::UserMenu);
+            }
+            else {
+                int number;
+                try {
+                    number = stoi(comand);
+                }
+                catch (invalid_argument ia) {
+                    app.ShowHelp();
+                    continue;
+                }
+
+                if (number < 0 || number > app.GetCurrentUser()->Friends.size()) {
+                    cout << "Input must be in friends list range\n";
+                    continue;
+                }
+                else {
+                    User* user = &app.GetCurrentUser()->Friends[number - 1];
+                    app.SetCurrentUser(user);
+                    app.SaveUser(user);
+                    app.GoTo(State::UserMenu);
+                }
             }
         }
     }
