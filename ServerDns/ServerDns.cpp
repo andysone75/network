@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <map>
 
 #include "DnsHelper.h"
 
@@ -9,6 +10,10 @@ using namespace std;
 
 int main()
 {
+	map<string, int> types;
+	types["/a"] = DNS_TYPE_A;
+	types["/ns"] = DNS_TYPE_NS;
+
 	// Initialization
 	Server server(53);
 	if (server.getLastError() == FAIL_CODE_INIT_WSA)
@@ -43,10 +48,10 @@ int main()
 			return -1;
 		}
 
-		string url = server.getRecieveBuffer();
+		string client = server.getRecieveBuffer();
 
-		cout << "Client: " << url << endl;
-		if (strcmp(url.c_str(), "kill") == 0) {
+		cout << "Client: " << client << endl;
+		if (strcmp(client.c_str(), "kill") == 0) {
 			server.sendResponse("server killed. reboot server before input new command");
 			if (server.getLastError() == FAIL_CODE_BUFFER_OVERFLOW)
 			{
@@ -63,19 +68,16 @@ int main()
 			break;
 		}
 
-		ifstream ifs;
-		ifs.open("config.txt");
-		string configValue = string(istreambuf_iterator<char>(ifs), istreambuf_iterator<char>());
-		ifs.close();
+		USHORT delim = client.find('|');
+		string type = client.substr(0, delim);
+		string url = client.substr(delim+1);
 
-		string ip;
-		dns.GetIp(ip, url.c_str());
-	
-		string str = (ip.empty()) ? "Error" : ip;
+		string data;
+		auto t = types[type];
+		if (type == "/ns") dns.RequestNs(data, url.c_str());
+		else dns.RequestA(data, url.c_str());
 
-		//string str = "Helo, World!";
-
-		server.sendResponse(str.c_str());
+		server.sendResponse(data.c_str());
 		if (server.getLastError() == FAIL_CODE_BUFFER_OVERFLOW)
 		{
 			cout << "The response size is larger than the allowed buffer size.\n";

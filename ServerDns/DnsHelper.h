@@ -6,6 +6,8 @@
 #include <windns.h>
 #include <ws2tcpip.h>
 #include <vector>
+#include <comdef.h>
+#include <vector>
 
 #pragma comment(lib, "Dnsapi.lib")
 #pragma comment(lib, "Ws2_32.lib")
@@ -15,10 +17,15 @@ using namespace std;
 class DnsHelper {
 public:
     DnsHelper();
-	void GetIp(string& dest, const char* url);
+    void RequestA(string& dest, const char* url);
+    void RequestNs(string& dest, const char* url);
 private:
 	map<string, string> cache;
     map<string, time_t> times;
+    map<string, string> ns;
+    map<string, time_t> timesNs;
+    DNS_STATUS Request(const char* url, int type, PDNS_RECORD& pQueryResults);
+    void NsCacheInit();
 };
 
 DnsHelper::DnsHelper() {
@@ -88,32 +95,105 @@ DnsHelper::DnsHelper() {
         ofCache.close();
         ofTimes.close();
     }
+
+    NsCacheInit();
 }
 
-void DnsHelper::GetIp(string& dest, const char* url) {
-	map<string, string>::iterator iter = cache.find(url);
-	bool inCache = (iter != cache.end());
+void DnsHelper::NsCacheInit() {
+    ifstream fNs("ns.txt");
+    ifstream fTimes("timesNs.txt");
+
+    string nsValue = string(istreambuf_iterator<char>(fNs), istreambuf_iterator<char>());
+    string timesValue = string(istreambuf_iterator<char>(fTimes), istreambuf_iterator<char>());
+
+    fNs.close();
+    fTimes.close();
+
+    if (nsValue.empty()) return;
+
+    vector<string> lines;
+    size_t start = 0;
+    size_t cur = nsValue.find("|", start);
+
+    string nsNewValue = "";
+    string timesNewValue = "";
+
+    while (cur < nsValue.size()) {
+        lines.push_back(nsValue.substr(start, cur - start));
+        start = cur + 1;
+        cur = nsValue.find("|", start);
+    }
+
+    for (auto iter = lines.begin(); iter != lines.end(); ++iter) {
+        unsigned short delim = iter->find("=>");
+        string url = iter->substr(0, delim);
+        string val = iter->substr(delim + 2);
+        ns[url] = val;
+    }
+
+    start = 0;
+    cur = timesValue.find("|", start);
+    while (cur < timesValue.size()) {
+        string line = timesValue.substr(start, cur - start);
+
+        unsigned short delim = line.find("=>");
+        string url = line.substr(0, delim);
+        time_t timeVal = stoi(line.substr(delim + 2));
+
+        if (timeVal < time(0)) {
+            ns.erase(ns.find(url));
+        }
+        else {
+            nsNewValue += url + "=>" + ns[url] + "|";
+            timesNewValue += line + "|";
+        }
+
+        start = cur + 1;
+        cur = timesValue.find("|", start);
+    }
+
+    system("del ns.txt");
+    system("del timesNs.txt");
+
+    ofstream oNs("ns.txt");
+    ofstream oTimes("timesNs.txt");
+
+    oNs << nsNewValue;
+    oTimes << timesNewValue;
+
+    oNs.close();
+    oTimes.close();
+}
+
+DNS_STATUS DnsHelper::Request(const char* url, int type, PDNS_RECORD& pQueryResults) {
+    DNS_STATUS status;
+
+    size_t length = strlen(url);
+    wchar_t text_wchar[30];
+    mbstowcs_s(&length, text_wchar, url, length);
+    CONST WCHAR* owner = text_wchar;
+
+    status = DnsQuery(
+        owner,
+        type,
+        DNS_QUERY_STANDARD,
+        NULL,
+        &pQueryResults,
+        NULL
+    );
+
+    return status;
+}
+
+void DnsHelper::RequestA(string& dest, const char* url) {
+    map<string, string>::iterator iter = cache.find(url);
+    bool inCache = (iter != cache.end());
     if (inCache)
         dest = iter->second;
-	else
-	{
-        DNS_STATUS status;
+    else
+    {
         PDNS_RECORD pQueryResults;
-        IN_ADDR ipaddr;
-        
-        size_t length = strlen(url);
-        wchar_t text_wchar[30];
-        mbstowcs_s(&length, text_wchar, url, length);
-        CONST WCHAR* owner = text_wchar;
-
-        status = DnsQuery(
-            owner,
-            DNS_TYPE_A,
-            DNS_QUERY_STANDARD,
-            NULL,
-            &pQueryResults,
-            NULL
-        );
+        auto status = Request(url, DNS_TYPE_A, pQueryResults);
 
         if (status)
             dest.clear();
@@ -125,6 +205,7 @@ void DnsHelper::GetIp(string& dest, const char* url) {
             fCache.open("cache.txt", ios_base::app);
             fTimes.open("times.txt", ios_base::app);
 
+            IN_ADDR ipaddr;
             ipaddr.S_un.S_addr = (pQueryResults->Data.A.IpAddress);
             char temp[30];
             inet_ntop(AF_INET, &ipaddr, temp, 30);
@@ -133,7 +214,7 @@ void DnsHelper::GetIp(string& dest, const char* url) {
             string ip;
             ip = dest;
 
-            cache[url] = ip.c_str();
+            cache[url] = ip;
             times[url] = time(0);
 
             fCache << url << "=>" << ip << '|';
@@ -142,5 +223,38 @@ void DnsHelper::GetIp(string& dest, const char* url) {
             fCache.close();
             fTimes.close();
         }
-	}
+    }
+}
+
+void DnsHelper::RequestNs(string& dest, const char* url) {
+    auto iter = ns.find(url);
+    bool inCache = (iter != ns.end());
+    if (inCache) {
+        dest = iter->second;
+    }
+    else {
+        PDNS_RECORD pQueryResults;
+        auto status = Request(url, DNS_TYPE_NS, pQueryResults);
+
+        if (status)
+            dest.clear();
+        else {
+            wstring wdest = pQueryResults->Data.NS.pNameHost;
+            _bstr_t b(wdest.c_str());
+            dest = b;
+
+            ofstream fNs, fTimes;
+            fNs.open("ns.txt", ios_base::app);
+            fTimes.open("timesNs.txt", ios_base::app);
+
+            ns[url] = dest;
+            timesNs[url] = time(0);
+
+            fNs << url << "=>" << dest << "|";
+            fTimes << url << "=>" << time(0) + pQueryResults->dwTtl << "|";
+
+            fNs.close();
+            fTimes.close();
+        }
+    }
 }
